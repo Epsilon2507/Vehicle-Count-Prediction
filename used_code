@@ -1,0 +1,114 @@
+# Import Libraries
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+# Read data from csv
+train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+
+# Baseline model
+baseline_mean = train['count'].mean()
+print('Baseline MAE:', mean_absolute_error(test['count'], [baseline_mean]*len(test)))
+
+# Feature engineering
+train['datetime'] = pd.to_datetime(train['datetime'])
+test['datetime'] = pd.to_datetime(test['datetime'])
+
+train['hour'] = train['datetime'].dt.hour
+train['day'] = train['datetime'].dt.day
+train['month'] = train['datetime'].dt.month
+train['year'] = train['datetime'].dt.year
+
+test['hour'] = test['datetime'].dt.hour
+test['day'] = test['datetime'].dt.day
+test['month'] = test['datetime'].dt.month
+test['year'] = test['datetime'].dt.year
+
+# Split data into train and validation
+X_train = train.drop(['count', 'datetime'], axis=1)
+y_train = train['count']
+X_test = test.drop(['count', 'datetime'], axis=1)
+y_test = test['count']
+
+X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
+
+# Random Forest model
+model = RandomForestRegressor(n_estimators=100, random_state=0)
+model.fit(X_train, y_train)
+
+# Predict on validation set
+y_pred = model.predict(X_valid)
+
+# Evaluate the model
+print('Validation MAE:', mean_absolute_error(y_valid, y_pred))
+
+# Feature importance
+importances = model.feature_importances_
+indices = np.argsort(importances)[::-1]
+print('Feature ranking:')
+for f in range(X_train.shape[1]):
+    print(f'{X_train.columns[indices[f]]}: {importances[indices[f]]}')
+
+# Plot feature importances
+plt.figure()
+plt.title('Feature importances')
+plt.bar(range(X_train.shape[1]), importances[indices], align='center')
+plt.xticks(range(X_train.shape[1]), X_train.columns[indices], rotation=90)
+plt.xlim([-1, X_train.shape[1]])
+plt.show()
+
+# Predict on test set
+y_test_pred = model.predict(X_test)
+test['count'] = y_test_pred
+
+# Save predictions
+test[['datetime', 'count']].to_csv('submission.csv', index=False)
+
+# Plot actual vs predicted counts
+plt.figure(figsize=(10, 6))
+plt.scatter(y_valid, y_pred)
+plt.xlabel('Actual')
+plt.ylabel('Predicted')
+plt.title('Actual vs Predicted Count of Vehicles')
+plt.show()
+
+# Function to predict number of vehicles
+def predict_vehicle_count(date_str, time_str, location):
+    datetime_str = f'{date_str} {time_str}'
+    datetime_obj = pd.to_datetime(datetime_str, format='%Y-%m-%d %H:%M:%S')
+    input_data = {
+        'hour': [datetime_obj.hour],
+        'day': [datetime_obj.day],
+        'month': [datetime_obj.month],
+        'year': [datetime_obj.year],
+        'location': [location]
+    }
+    input_df = pd.DataFrame(input_data)
+    predicted_count = model.predict(input_df)[0]
+    return predicted_count
+
+# Example usage
+date_str = '2024-08-02'
+time_str = '14:00:00'
+location = 1
+predicted_count = predict_vehicle_count(date_str, time_str, location)
+print(f'Predicted number of vehicles: {predicted_count}')
+
+# Read additional data
+df = pd.read_csv('additional_data.csv')
+df['datetime'] = pd.to_datetime(df['datetime'])
+df.set_index('datetime', inplace=True)
+daily_counts = df['count'].resample('D').sum()
+
+# Plot number of vehicles over time
+plt.figure(figsize=(12, 6))
+plt.plot(daily_counts.index, daily_counts.values)
+plt.xlabel('Date')
+plt.ylabel('Number of Vehicles')
+plt.title('Total Number of Vehicles Over Time')
+plt.show()
